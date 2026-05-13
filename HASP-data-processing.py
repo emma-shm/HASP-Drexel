@@ -152,6 +152,7 @@ drift = pd.concat(drift_pieces, ignore_index=True).dropna() # concatenating all 
 print("\nInter-teensy signal-time drift (t1 - t2) stats:")
 print(drift.describe())
 
+
 # === Cumulative coincidence counts per column ============================
 # For each configured column, build a chain of cumulative coincidence event
 # counts: e.g. col1_CW_1&2 counts events where triggers 1 AND 2 both fired,
@@ -159,13 +160,21 @@ print(drift.describe())
 # These are RUNNING TOTALS (cumulative sum down the rows), matching the
 # spirit of the old datalogger's "Events CW1&2" / "Events CW1&2&3" columns.
 for col_name, trigger_nums in COINCIDENCE_GROUPS.items():                  # loop over each column's list of trigger numbers, e.g. col_name='col1', trigger_nums=[1,2,3,4]
+    matched_mask = merged['match_status'] == 'matched'                     # COMMENT OUT THIS LINE (and the `& matched_mask` below) to include orphans/pattern-mismatches in the cumulative counts
     running_and = pd.Series(True, index=merged.index)                      # start with all-True boolean Series; we'll AND each successive trigger's binary into it to build up the coincidence condition row by row
     chain_label = ''                                                       # human-readable label suffix, grows as '1' → '1&2' → '1&2&3' → '1&2&3&4'
     for nn in trigger_nums:                                                # walk through the trigger numbers IN ORDER (order in the config list matters here)
-        running_and &= (merged[f'trigger_{nn:02d}_binary'] == 1)           # AND this trigger's "fired?" boolean into the running condition; after this line, running_and is True only on rows where every trigger seen so far fired
+        running_and &= (merged[f'trigger_{nn:02d}_binary'] == 1) & matched_mask  # AND this trigger's "fired?" boolean into the running condition, also AND in matched_mask so only fully-matched rows can ever count
         chain_label = f'{nn}' if not chain_label else f'{chain_label}&{nn}' # build up the label: first iteration sets it to e.g. '1', later ones append '&2', '&3', etc.
         if len(chain_label.split('&')) >= 2:                               # only emit a column once we've ANDed at least 2 triggers (a single trigger isn't really "coincidence")
             merged[f'{col_name}_CW_{chain_label}'] = running_and.cumsum()  # store the cumulative count of coincidence events down the rows (.cumsum() on a bool Series counts Trues running total); column name e.g. 'col1_CW_1&2', 'col1_CW_1&2&3', 'col1_CW_1&2&3&4'
+
+print("\nFinal coincidence counts per column:")
+for col_name, trigger_nums in COINCIDENCE_GROUPS.items():                  # print the last value of each cumulative column as a sanity check — that's the total event count for that coincidence level over the whole run
+    cw_cols = [c for c in merged.columns if c.startswith(f'{col_name}_CW_')]
+    for c in cw_cols:
+        print(f"  {c}: {int(merged[c].iloc[-1])}")
+
 
 print("\nFinal coincidence counts per column:")
 for col_name, trigger_nums in COINCIDENCE_GROUPS.items():                  # print the last value of each cumulative column as a sanity check — that's the total event count for that coincidence level over the whole run
