@@ -26,10 +26,10 @@ teensy2_fp = '/path/to/sipm_teensy_2.csv'
 # Order within each list matters: it defines the cumulative coincidence
 # chain (e.g. col1_CW_1&2 uses the first two, col1_CW_1&2&3 the first three).
 COINCIDENCE_GROUPS = {
-    'col1': [1, 2, 3, 4],
-    'col2': [5, 6, 7, 8],
-    'col3': [9, 10, 11, 12],
-    'col4': [13, 14, 15, 16],
+    'col1': [1, 5, 9, 13],
+    'col2': [2, 6, 10, 14],
+    'col3': [3, 7, 11, 15],
+    'col4': [4, 8, 12, 16],
 }
 
 # All plots get saved to ./results/ relative to wherever this script is run.
