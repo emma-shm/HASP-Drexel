@@ -6,7 +6,7 @@ import os
 from scipy.optimize import curve_fit
 
 
-def build_absolute_timer(df, time_col, reset_threshold=-10_000_000):
+def build_absolute_timer(df, time_col='microseconds_since_boot', reset_threshold=-10_000_000):
     '''
     Detects timer resets in the given time column, builds a continuous
     absolute timer by chaining segments end-to-end, and returns df with
@@ -18,7 +18,7 @@ def build_absolute_timer(df, time_col, reset_threshold=-10_000_000):
         reset_threshold:   a drop below this value (default -10_000_000 us)
                         is treated as a timer reset
 
-    Returns:
+    ReturnsE
         df with new 'Absolute Timer (us)' column added
     '''
 
@@ -61,7 +61,7 @@ def build_absolute_timer(df, time_col, reset_threshold=-10_000_000):
 
         previous_end = absolute_this_segment[-1]
 
-    df['Absolute Timer (S)'] = absolute_timers
+    df['Absolute Timer (us)'] = absolute_timers
 
     return df
 
@@ -81,7 +81,7 @@ class CW_Processing:
 
         col_name = f'col{ch}'
         trigger_nums = self.coincidence_groups[col_name]
-        all_events = pd.concat([self.df[f'sipm_layer_{layer}_adc_ch_{ch}'] for layer in range(1, self.n_layers + 1)]).dropna()
+        all_events = pd.concat([self.df[f'sipm_{(layer - 1) * 4 + ch:02d}_adc'] for layer in range(1, self.n_layers + 1)]).dropna()
 
         palette = ['blue', 'orange', 'green', 'red', 'purple', 'brown']
         data    = [all_events]
@@ -94,7 +94,7 @@ class CW_Processing:
             label = '&'.join(str(n) for n in trigger_nums[:order])
             delta_col = f'delta_{col_name}_CW_{label}'
             events_k = pd.concat([
-                self.df.loc[self.df[delta_col] > 0, f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.df.loc[self.df[delta_col] > 0, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.n_layers + 1)
             ]).dropna()
             fold = fold_names.get(order, f'{order}-fold')
@@ -151,6 +151,27 @@ class CW_Analysis:
         self.stored = None
         self.results_dir = os.path.join(os.getcwd(), 'analysis_results')
         os.makedirs(self.results_dir, exist_ok=True)
+    
+    def apply_deadtime_correction(self):
+        """
+        Computes deadtime-corrected per-event livetime for all 16 scintillators
+        across the merged df in one pass. For each sipm, filters to rows where
+        it fired, computes livetime = (time elapsed since last event) - (deadtime
+        of this event), and attaches the result as a new column on self.df.
+        """
+        for i in range(1, 17):
+            trigger_col  = f'sipm_{i:02d}_trigger'
+            deadtime_col = f'trigger_{i:02d}_dead_time_t1'
+
+            scint_df = self.processor.df[self.df[trigger_col] == 1]
+
+            time  = scint_df['Absolute Timer (us)'].values / 1e6   # to seconds
+            deadt = scint_df[deadtime_col].values / 1e6            # to seconds
+
+            event_livetime_s = np.diff(np.append([0], time)) - deadt
+            event_livetime_s = event_livetime_s.clip(min=0)
+
+            self.processor.df.loc[scint_df.index, f'livetime_scint{i:02d}[s]'] = event_livetime_s
 
     def fit_moyal(self, centers, rates, fit_x_min=200, fit_x_max=1000, fit_x_n=300):
         def moyal(x, mpv, eta, A):
@@ -216,15 +237,15 @@ class CW_Analysis:
             coinc_mask = self.processor.df[delta_col] > 0
 
             all_events = pd.concat([
-                self.processor.df[f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df[f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna()
             coinc_events = pd.concat([
-                self.processor.df.loc[coinc_mask, f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df.loc[coinc_mask, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna()
             no_coinc_events = pd.concat([
-                self.processor.df.loc[~coinc_mask, f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df.loc[~coinc_mask, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna()
 
@@ -311,15 +332,15 @@ class CW_Analysis:
             coinc_mask = self.processor.df[delta_col] > 0
 
             all_events = pd.concat([
-                self.processor.df[f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df[f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna()
             coinc_events = pd.concat([
-                self.processor.df.loc[coinc_mask, f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df.loc[coinc_mask, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna()
             no_coinc_events = pd.concat([
-                self.processor.df.loc[~coinc_mask, f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df.loc[~coinc_mask, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna()
 
@@ -414,7 +435,7 @@ class CW_Analysis:
 
             coinc_mask = self.processor.df[delta_col] > 0
             data = pd.concat([
-                self.processor.df.loc[coinc_mask, f'sipm_layer_{layer}_adc_ch_{ch}']
+                self.processor.df.loc[coinc_mask, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
                 for layer in range(1, self.processor.n_layers + 1)
             ]).dropna().values
 
@@ -510,9 +531,8 @@ class CW_Analysis:
                 label     = '&'.join(str(n) for n in trigger_nums[:order])
                 delta_col = f'delta_{col_name}_CW_{label}'
                 for layer in range(1, self.processor.n_layers + 1):
-                    adc_col = f'sipm_layer_{layer}_adc_ch_{ch}'
-                    master[f'ADC_{col_name}_CW_{label}_layer{layer}'] = (
-                        master[adc_col].where(master[delta_col] > 0))
+                    adc_col = f'sipm_{(layer - 1) * 4 + ch:02d}_adc'
+                    master[f'ADC_{col_name}_CW_{label}_layer{layer}'] = (master[adc_col].where(master[delta_col] > 0))
 
         for ch in range(1, self.processor.n_channels + 1):
             col_name     = f'col{ch}'
