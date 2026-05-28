@@ -126,7 +126,6 @@ for col in TRIGGER_DEAD_TIME_COLS:
 t2_time_renames['microseconds_since_boot'] = 'microseconds_since_boot_t2'
 t2_time_renames['utc_time'] = 'utc_time_t2' # e.g. 'trigger_01_event_time' -> 'trigger_01_event_time_t2'
 df2 = df2.rename(columns=t2_time_renames)
-
 t2_binary_renames = {}
 for col in TRIGGER_BINARY_COLS: # looping over the trigger event detection binary columns to rename with suffic t2, not doing this with t1 since want to keep them as the canonical trigger pattern (ie. not renamed)
     t2_binary_renames[col] = col + '_t2'
@@ -220,9 +219,32 @@ print(f"\nTotal rows in unified DataFrame: {len(merged)}")
 matched_only = merged[merged['match_status'] == 'matched'] # slicing the dataframe to only include rows where there was a time match and trigger patterns agreed
 drift = (matched_only['event_time_unix_s'] - matched_only['event_time_unix_s_t2']).dropna()
 
-
 print("\nInter-teensy signal-time drift (t1 - t2) stats:")
 print(drift.describe())
+print(
+    "\nHow to interpret:\n"
+    "  count : number of matched events contributing (pattern_mismatch and orphans excluded)\n"
+    "  mean  : average t1-minus-t2 offset in seconds; sign tells which teensy runs ahead\n"
+    "          (negative -> t1 stamps earlier than t2; positive -> t2 stamps earlier than t1)\n"
+    "  std   : event-to-event jitter in the offset; small std + nonzero mean = stable clock\n"
+    "          offset (correctable), large std = offset itself is wandering (investigate)\n"
+    "  min   : largest offset in the t1-earlier direction (most negative value)\n"
+    "  max   : largest offset in the t2-earlier direction (most positive value)\n"
+    "          compare |min| and |max| to MERGE_TOLERANCE -- if either is close to it,\n"
+    "          some matches may be borderline and tolerance should be tightened\n"
+    "  25/50/75% : distribution quartiles; if 50% (median) differs notably from mean,\n"
+    "          the drift distribution is skewed or has outliers worth plotting"
+)
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.hist(drift, bins=100, color='steelblue', edgecolor='black')
+ax.set_xlabel('Δt = event_time_unix_s_t1 - event_time_unix_s_t2 (UTC-derived, seconds, matched rows)')
+ax.set_ylabel('Count')
+ax.set_title('Inter-teensy signal-time drift distribution')
+plt.tight_layout()
+plt.show()
+
+
 
 
 # === Cumulative coincidence counts per column ============================
@@ -288,10 +310,3 @@ for col_name, trigger_nums in COINCIDENCE_GROUPS.items():                  # pri
 # FINAL MERGED DATAFRAME SHOULD HAVE THE FOLLOWING HEADERS:
 # event_time_unix_s, event_time_unix_s_t2, _t1_orig_idx, _t2_orig_idx, utc_time_t1, utc_time_t2, microseconds_since_boot_t1, microseconds_since_boot_t2, sipm_01_trigger_t1, sipm_02_trigger_t1, sipm_03_trigger_t1, sipm_04_trigger_t1, sipm_05_trigger_t1, sipm_06_trigger_t1, sipm_07_trigger_t1, sipm_08_trigger_t1, sipm_09_trigger_t1, sipm_10_trigger_t1, sipm_11_trigger_t1, sipm_12_trigger_t1, sipm_13_trigger_t1, sipm_14_trigger_t1, sipm_15_trigger_t1, sipm_16_trigger, trigger_01_dead_time_t1, trigger_02_dead_time_t1, trigger_03_dead_time_t1, trigger_04_dead_time_t1, trigger_05_dead_time_t1, trigger_06_dead_time_t1, trigger_07_dead_time_t1, trigger_08_dead_time_t1, trigger_09_dead_time_t1, trigger_10_dead_time_t1, trigger_11_dead_time_t1, trigger_12_dead_time_t1, trigger_13_dead_time_t1, trigger_14_dead_time_t1, trigger_15_dead_time_t1, trigger_16_dead_time_t1, trigger_01_dead_time_t2, trigger_02_dead_time_t2, trigger_03_dead_time_t2, trigger_04_dead_time_t2, trigger_05_dead_time_t2, trigger_06_dead_time_t2, trigger_07_dead_time_t2, trigger_08_dead_time_t2, trigger_09_dead_time_t2, trigger_10_dead_time_t2, trigger_11_dead_time_t2, trigger_12_dead_time_t2, trigger_13_dead_time_t2, trigger_14_dead_time_t2, trigger_15_dead_time_t2, trigger_16_dead_time_t2, sipm_01_adc, sipm_02_adc, sipm_03_adc, sipm_04_adc, sipm_05_adc, sipm_06_adc, sipm_07_adc, sipm_08_adc, sipm_09_adc, sipm_10_adc, sipm_11_adc, sipm_12_adc, sipm_13_adc, sipm_14_adc, sipm_15_adc, sipm_16_adc, sipm_01_threshold, sipm_02_threshold, sipm_03_threshold, sipm_04_threshold, sipm_05_threshold, sipm_06_threshold, sipm_07_threshold, sipm_08_threshold, sipm_09_threshold, sipm_10_threshold, sipm_11_threshold, sipm_12_threshold, sipm_13_threshold, sipm_14_threshold, sipm_15_threshold, sipm_16_threshold, cpu_temperature_t1, cpu_temperature_t2, match_status, col1_CW_1&5, col1_CW_1&5&9, col1_CW_1&5&9&13, col2_CW_2&6, col2_CW_2&6&10, col2_CW_2&6&10&14, col3_CW_3&7, col3_CW_3&7&11, col3_CW_3&7&11&15, col4_CW_4&8, col4_CW_4&8&12, col4_CW_4&8&12&16, delta_col1_CW_1&5, delta_col1_CW_1&5&9, delta_col1_CW_1&5&9&13, delta_col2_CW_2&6, delta_col2_CW_2&6&10, delta_col2_CW_2&6&10&14, delta_col3_CW_3&7, delta_col3_CW_3&7&11, delta_col3_CW_3&7&11&15, delta_col4_CW_4&8, delta_col4_CW_4&8&12, delta_col4_CW_4&8&12&16
 
-fig, ax = plt.subplots(figsize=(8, 4))
-ax.hist(drift, bins=100, color='steelblue', edgecolor='black')
-ax.set_xlabel('Δt = event_time_unix_s_t1 - event_time_unix_s_t2 (UTC-derived, seconds, matched rows)')
-ax.set_ylabel('Count')
-ax.set_title('Inter-teensy signal-time drift distribution')
-plt.tight_layout()
-plt.show()

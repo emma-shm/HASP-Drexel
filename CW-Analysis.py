@@ -66,22 +66,22 @@ def build_absolute_timer(df, time_col='microseconds_since_boot', reset_threshold
     return df
 
 
-class CW_Processing:
-    def __init__(self, merged_df, coincidence_groups):
-        self.df = merged_df
-        self.coincidence_groups = coincidence_groups  # the COINCIDENCE_GROUPS dict
-        self.n_layers = 4
-        self.n_channels = len(coincidence_groups)
-        
-        # each channel corresponds to a different column I THINK...
-        for ch in range(1, self.n_channels + 1):
-            self.plot_ADC_histograms(ch)
+# COINCIDENCE_GROUPS = {
+#     'col1': [1, 5, 9, 13],
+#     'col2': [2, 6, 10, 14],
+#     'col3': [3, 7, 11, 15],
+#     'col4': [4, 8, 12, 16],}
+# and the merged dataframe should have ADC columns like sipm_01_adc ... sipm_16_adc, so the grouping for the columns and plotting can be done using this logic
 
-    def plot_ADC_histograms(self, ch, bins=100):
+def plot_ADC_histograms(df, coincidence_groups, bins=100):
+    n_layers = 4
+    columns = len(coincidence_groups) # number of physical columns, one per key in coincidence_groups
+
+    for ch in range(1, columns + 1): # looping over each physical column (col1, col2, col3, col4)
 
         col_name = f'col{ch}'
-        trigger_nums = self.coincidence_groups[col_name]
-        all_events = pd.concat([self.df[f'sipm_{(layer - 1) * 4 + ch:02d}_adc'] for layer in range(1, self.n_layers + 1)]).dropna()
+        trigger_nums = coincidence_groups[col_name]
+        all_events = pd.concat([df[f'sipm_{(layer - 1) * 4 + ch:02d}_adc'] for layer in range(1, n_layers + 1)]).dropna() # concatenate ADC values from all layers in this column
 
         palette = ['blue', 'orange', 'green', 'red', 'purple', 'brown']
         data    = [all_events]
@@ -94,18 +94,18 @@ class CW_Processing:
             label = '&'.join(str(n) for n in trigger_nums[:order])
             delta_col = f'delta_{col_name}_CW_{label}'
             events_k = pd.concat([
-                self.df.loc[self.df[delta_col] > 0, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
-                for layer in range(1, self.n_layers + 1)
+                df.loc[df[delta_col] > 0, f'sipm_{(layer - 1) * 4 + ch:02d}_adc']
+                for layer in range(1, n_layers + 1)
             ]).dropna()
             fold = fold_names.get(order, f'{order}-fold')
+            data.append(events_k) # add this coincidence level's ADC values to the list to be plotted
             labels.append(f'{fold} coincidence events ({col_name}_CW_{label})')
             colors.append(palette[idx % len(palette)])
 
         fig, ax = plt.subplots(figsize=(8, 4))
 
         for dataset, color, label in zip(data, colors, labels):
-
-            ax.hist(dataset,bins=bins,color=color,edgecolor='black',alpha=0.5,label=label)
+            ax.hist(dataset, bins=bins, color=color, edgecolor='black', alpha=0.5, label=label)
 
         ax.set_xlabel('ADC [0-4095]', fontsize=12)
         ax.set_ylabel('Count', fontsize=12)
@@ -134,7 +134,7 @@ class CW_Processing:
     #     time  = s['Time[s]'].values
     #     deadt = scint_df['Deadtime[s]'].values
 
-    #     # delta deadtime per event (same np.diff + prepend pattern as colleague's script)
+    #     # delta deadtime per event
     #     event_deadt_s    = np.diff(np.append([0], deadt))
     #     event_livetime_s = np.diff(np.append([0], time)) - event_deadt_s
 
@@ -257,8 +257,8 @@ class CW_Analysis:
             counts_coinc, _    = np.histogram(coinc_events, bins=bin_edges)
             counts_no_coinc, _ = np.histogram(no_coinc_events, bins=bin_edges)
 
-            total_livetime_s = 1  # TODO: replace once deadtime columns confirmed
-
+            total_livetime_s = getattr(self.processor, f'livetime_scint{(ch-1)*4+1:02d}[s]').sum()
+            
             rate_all      = counts_all      / total_livetime_s
             rate_coinc    = counts_coinc    / total_livetime_s
             rate_no_coinc = counts_no_coinc / total_livetime_s
